@@ -9,10 +9,9 @@ import { Input } from "@/components/ui/input"
 import { format } from "date-fns"
 import { createShortUrl, deleteUrl, getUrls, type UrlRecord } from "@/app/actions/url-actions"
 
-const MAX_LINKS = 11
-
 export function UrlShortener() {
   const [url, setUrl] = useState("")
+  const [customCode, setCustomCode] = useState("")
   const [links, setLinks] = useState<UrlRecord[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isFetching, setIsFetching] = useState(true)
@@ -43,17 +42,19 @@ export function UrlShortener() {
   }
 
   const handleShorten = async () => {
-    if (!url || links.length >= MAX_LINKS) return
+    if (!url) return
 
     setIsLoading(true)
     setError(null)
 
     const normalizedUrl = normalizeUrl(url)
-    const result = await createShortUrl(normalizedUrl)
+    const codeToUse = customCode.trim() || undefined
+    const result = await createShortUrl(normalizedUrl, codeToUse)
 
     if (result.data) {
       setLinks((prev) => [result.data!, ...prev])
       setUrl("")
+      setCustomCode("")
     }
 
     if (result.error) {
@@ -75,7 +76,7 @@ export function UrlShortener() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && url && !isLoading && links.length < MAX_LINKS) {
+    if (e.key === "Enter" && url && !isLoading) {
       handleShorten()
     }
   }
@@ -114,11 +115,25 @@ export function UrlShortener() {
             />
             <Button
               onClick={handleShorten}
-              disabled={!url || isLoading || links.length >= MAX_LINKS}
+              disabled={!url || isLoading}
               className="bg-primary px-6 text-primary-foreground shadow-md shadow-primary/25 transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/30 disabled:shadow-none"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Shorten"}
             </Button>
+          </div>
+
+          <div className="mt-4">
+            <label className="mb-2 block text-sm font-medium text-foreground">Custom Code (optional)</label>
+            <Input
+              type="text"
+              placeholder="e.g., my-link, promo2024"
+              value={customCode}
+              onChange={(e) => setCustomCode(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+              className="border-border bg-background/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Letters, numbers, and dashes only. Leave empty for random code.
+            </p>
           </div>
 
           <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
@@ -138,7 +153,7 @@ export function UrlShortener() {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground">Your Links</h2>
           <span className="rounded-full bg-secondary px-3 py-1 text-sm font-medium text-secondary-foreground">
-            {links.length}/{MAX_LINKS}
+            {links.length}
           </span>
         </div>
 

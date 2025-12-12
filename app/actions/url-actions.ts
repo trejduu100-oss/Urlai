@@ -20,15 +20,11 @@ function generateShortCode(): string {
   return result
 }
 
-export async function createShortUrl(originalUrl: string) {
-  console.log("[v0] createShortUrl called with:", originalUrl)
-
+export async function createShortUrl(originalUrl: string, customCode?: string) {
   try {
     const supabase = await createClient()
-    console.log("[v0] Supabase client created")
 
-    const shortCode = generateShortCode()
-    console.log("[v0] Generated short code:", shortCode)
+    const shortCode = customCode || generateShortCode()
 
     const expiryDate = new Date()
     expiryDate.setMonth(expiryDate.getMonth() + 1)
@@ -44,15 +40,15 @@ export async function createShortUrl(originalUrl: string) {
       .single()
 
     if (error) {
-      console.error("[v0] Supabase error creating short URL:", error)
+      if (error.code === "23505") {
+        return { error: `Custom code "${customCode}" is already taken. Please try another.` }
+      }
       return { error: error.message }
     }
 
-    console.log("[v0] Successfully created URL:", data)
     revalidatePath("/")
     return { data: data as UrlRecord }
   } catch (err) {
-    console.error("[v0] Unexpected error in createShortUrl:", err)
     return { error: err instanceof Error ? err.message : "Unknown error occurred" }
   }
 }
