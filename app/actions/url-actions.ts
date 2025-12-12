@@ -85,10 +85,14 @@ export async function deleteUrl(id: string) {
 export async function getUrlByShortCode(shortCode: string) {
   const supabase = await createClient()
 
-  const { data, error } = await supabase.from("urls").select("*").eq("short_code", shortCode).single()
+  const { data, error } = await supabase.from("urls").select("*").eq("short_code", shortCode).maybeSingle()
 
   if (error) {
     return { error: error.message }
+  }
+
+  if (!data) {
+    return { error: "URL not found" }
   }
 
   if (data.expiry_date && new Date(data.expiry_date) < new Date()) {
