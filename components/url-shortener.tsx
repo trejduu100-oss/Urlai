@@ -6,7 +6,6 @@ import { useState, useEffect } from "react"
 import { Zap, Copy, Trash2, ExternalLink, Loader2, Check, Link2, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { format } from "date-fns"
 import { createShortUrl, deleteUrl, getUrls, type UrlRecord } from "@/app/actions/url-actions"
 
 export function UrlShortener() {
@@ -73,6 +72,11 @@ export function UrlShortener() {
   const handleDelete = async (id: string) => {
     setLinks((prev) => prev.filter((link) => link.id !== id))
     await deleteUrl(id)
+  }
+
+  const formatDate = (dateString: string): string => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -184,7 +188,7 @@ export function UrlShortener() {
                     <p className="mt-0.5 truncate text-sm text-muted-foreground">{link.original_url}</p>
                     <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      Expires {format(new Date(link.expiry_date!), "MMM d, yyyy")}
+                      Expires {formatDate(link.expiry_date!)}
                     </p>
                   </div>
                   <div className="ml-4 flex items-center gap-1 opacity-70 transition-opacity group-hover:opacity-100">
