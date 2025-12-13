@@ -40,75 +40,105 @@ export async function createShortUrl(originalUrl: string, customCode?: string) {
       .single()
 
     if (error) {
+      console.error("[v0] Database error:", error)
       if (error.code === "23505") {
         return { error: `Custom code "${customCode}" is already taken. Please try another.` }
       }
-      return { error: error.message }
+      return { error: error.message || "Failed to create short URL" }
     }
 
     revalidatePath("/")
     return { data: data as UrlRecord }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Unknown error occurred" }
+    const errorMsg = err instanceof Error ? err.message : "Unknown error occurred"
+    console.error("[v0] Exception in createShortUrl:", errorMsg, err)
+    return { error: errorMsg }
   }
 }
 
 export async function getUrls() {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  await cleanupExpiredUrls()
+    const { data, error } = await supabase.from("urls").select("*").order("created_at", { ascending: false })
 
-  const { data, error } = await supabase.from("urls").select("*").order("created_at", { ascending: false })
+    if (error) {
+      console.error("[v0] Error fetching URLs:", error)
+      return { error: error.message || "Failed to fetch URLs", data: [] }
+    }
 
-  if (error) {
-    console.error("Error fetching URLs:", error)
-    return { error: error.message, data: [] }
+    return { data: data as UrlRecord[] }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unknown error occurred"
+    console.error("[v0] Exception in getUrls:", errorMsg)
+    return { error: errorMsg, data: [] }
   }
-
-  return { data: data as UrlRecord[] }
 }
 
 export async function deleteUrl(id: string) {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { error } = await supabase.from("urls").delete().eq("id", id)
+    const { error } = await supabase.from("urls").delete().eq("id", id)
 
-  if (error) {
-    console.error("Error deleting URL:", error)
-    return { error: error.message }
+    if (error) {
+      console.error("[v0] Error deleting URL:", error)
+      return { error: error.message }
+    }
+
+    revalidatePath("/")
+    return { success: true }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unknown error occurred"
+    console.error("[v0] Exception in deleteUrl:", errorMsg)
+    return { error: errorMsg }
   }
-
-  revalidatePath("/")
-  return { success: true }
 }
 
 export async function getUrlByShortCode(shortCode: string) {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { data, error } = await supabase.from("urls").select("*").eq("short_code", shortCode).single()
+    const { data, error } = await supabase.from("urls").select("*").eq("short_code", shortCode).maybeSingle()
 
-  if (error) {
-    return { error: error.message }
+    if (error) {
+      console.error("[v0] Error fetching URL by code:", error)
+      return { error: error.message }
+    }
+
+    if (!data) {
+      return { error: "URL not found" }
+    }
+
+    if (data.expiry_date && new Date(data.expiry_date) < new Date()) {
+      await supabase.from("urls").delete().eq("id", data.id)
+      return { error: "URL has expired and been deleted" }
+    }
+
+    return { data: data as UrlRecord }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unknown error occurred"
+    console.error("[v0] Exception in getUrlByShortCode:", errorMsg)
+    return { error: errorMsg }
   }
-
-  if (data.expiry_date && new Date(data.expiry_date) < new Date()) {
-    await supabase.from("urls").delete().eq("id", data.id)
-    return { error: "URL has expired and been deleted" }
-  }
-
-  return { data: data as UrlRecord }
 }
 
 export async function cleanupExpiredUrls() {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { error } = await supabase.from("urls").delete().lt("expiry_date", new Date().toISOString())
+    const { error } = await supabase.from("urls").delete().lt("expiry_date", new Date().toISOString())
 
-  if (error) {
-    console.error("Error cleaning up expired URLs:", error)
-    return { error: error.message }
+    if (error) {
+      console.error("[v0] Error cleaning up expired URLs:", error)
+      return { error: error.message }
+    }
+
+    revalidatePath("/")
+    return { success: true }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unknown error occurred"
+    console.error("[v0] Exception in cleanupExpiredUrls:", errorMsg)
+    return { error: errorMsg }
   }
-
-  revalidatePath("/")
-  return { success: true }
 }

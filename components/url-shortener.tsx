@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useTransition } from "react"
 import { Zap, Copy, Trash2, ExternalLink, Loader2, Check, Link2, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,23 +12,40 @@ export function UrlShortener() {
   const [url, setUrl] = useState("")
   const [customCode, setCustomCode] = useState("")
   const [links, setLinks] = useState<UrlRecord[]>([])
-  const [isLoading, setIsLoading] = useState(false)
   const [isFetching, setIsFetching] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
+    let isMounted = true
+
     async function fetchLinks() {
-      const result = await getUrls()
-      if (result.data) {
-        setLinks(result.data)
+      try {
+        const result = await getUrls()
+        if (!isMounted) return
+
+        if (result.data) {
+          setLinks(result.data)
+        }
+        if (result.error) {
+          setError(result.error)
+        }
+      } catch (err) {
+        if (!isMounted) return
+        setError(err instanceof Error ? err.message : "Failed to fetch links")
+      } finally {
+        if (isMounted) {
+          setIsFetching(false)
+        }
       }
-      if (result.error) {
-        setError(result.error)
-      }
-      setIsFetching(false)
     }
+
     fetchLinks()
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   const normalizeUrl = (inputUrl: string): string => {
@@ -43,35 +60,50 @@ export function UrlShortener() {
   const handleShorten = async () => {
     if (!url) return
 
-    setIsLoading(true)
     setError(null)
 
-    const normalizedUrl = normalizeUrl(url)
-    const codeToUse = customCode.trim() || undefined
-    const result = await createShortUrl(normalizedUrl, codeToUse)
+    startTransition(async () => {
+      try {
+        const normalizedUrl = normalizeUrl(url)
+        const codeToUse = customCode.trim() || undefined
+        const result = await createShortUrl(normalizedUrl, codeToUse)
 
-    if (result.data) {
-      setLinks((prev) => [result.data!, ...prev])
-      setUrl("")
-      setCustomCode("")
-    }
+        if (result.error) {
+          setError(result.error)
+          return
+        }
 
-    if (result.error) {
-      setError(result.error)
-    }
-
-    setIsLoading(false)
+        if (result.data) {
+          setLinks((prev) => [result.data!, ...prev])
+          setUrl("")
+          setCustomCode("")
+        }
+      } catch (err) {
+        console.error("[v0] Error in handleShorten:", err)
+        setError(err instanceof Error ? err.message : "Failed to create short URL")
+      }
+    })
   }
 
   const handleCopy = async (id: string, shortCode: string) => {
-    await navigator.clipboard.writeText(`https://urlai.vercel.app/${shortCode}`)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
+    try {
+      await navigator.clipboard.writeText(`https://urlai.vercel.app/${shortCode}`)
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch (err) {
+      console.error("[v0] Copy failed:", err)
+      setError("Failed to copy to clipboard")
+    }
   }
 
   const handleDelete = async (id: string) => {
     setLinks((prev) => prev.filter((link) => link.id !== id))
-    await deleteUrl(id)
+    try {
+      await deleteUrl(id)
+    } catch (err) {
+      console.error("[v0] Delete failed:", err)
+      setError("Failed to delete URL")
+    }
   }
 
   const formatDate = (dateString: string): string => {
@@ -80,7 +112,7 @@ export function UrlShortener() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && url && !isLoading) {
+    if (e.key === "Enter" && url && !isPending) {
       handleShorten()
     }
   }
@@ -115,14 +147,15 @@ export function UrlShortener() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-1 border-border bg-background/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
+              disabled={isPending}
+              className="flex-1 border-border bg-background/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary disabled:opacity-50"
             />
             <Button
               onClick={handleShorten}
-              disabled={!url || isLoading}
+              disabled={!url || isPending}
               className="bg-primary px-6 text-primary-foreground shadow-md shadow-primary/25 transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/30 disabled:shadow-none"
             >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Shorten"}
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Shorten"}
             </Button>
           </div>
 
@@ -133,7 +166,8 @@ export function UrlShortener() {
               placeholder="e.g., my-link, promo2024"
               value={customCode}
               onChange={(e) => setCustomCode(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-              className="border-border bg-background/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
+              disabled={isPending}
+              className="border-border bg-background/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary disabled:opacity-50"
             />
             <p className="mt-1.5 text-xs text-muted-foreground">
               Letters, numbers, and dashes only. Leave empty for random code.
@@ -196,7 +230,8 @@ export function UrlShortener() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleCopy(link.id, link.short_code)}
-                      className="text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      disabled={isPending}
+                      className="text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-50"
                     >
                       {copiedId === link.id ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
                     </Button>
@@ -204,7 +239,8 @@ export function UrlShortener() {
                       variant="ghost"
                       size="icon"
                       onClick={() => window.open(`https://urlai.vercel.app/${link.short_code}`, "_blank")}
-                      className="text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      disabled={isPending}
+                      className="text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-50"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
@@ -212,7 +248,8 @@ export function UrlShortener() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(link.id)}
-                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      disabled={isPending}
+                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
